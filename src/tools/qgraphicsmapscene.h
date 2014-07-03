@@ -88,6 +88,7 @@ private:
     void redrawLayer(Core::Layer layer);
     void drawPen();
     void drawRect();
+    void drawCircle();
     void drawFill(int terrain_id, int x, int y);
     short bind(int x, int y);
 

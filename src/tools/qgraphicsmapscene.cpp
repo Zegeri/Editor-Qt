@@ -5,6 +5,7 @@
 #include <QGraphicsOpacityEffect>
 #include <QPainter>
 #include <QScrollBar>
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include "../core.h"
@@ -422,6 +423,10 @@ void QGraphicsMapScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
             m_drawing = true;
             drawRect();
             break;
+	 case (Core::CIRCLE):
+            m_drawing = true;
+            drawCircle();
+            break;
         case (Core::FILL):
             m_drawing = true;
             if (mCore->layer() == Core::LOWER)
@@ -456,6 +461,9 @@ void QGraphicsMapScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
             break;
         case (Core::RECTANGLE):
             drawRect();
+            break;
+	case (Core::CIRCLE):
+            drawCircle();
             break;
         default:
             break;
@@ -514,12 +522,14 @@ void QGraphicsMapScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 
 int QGraphicsMapScene::_x(int index)
 {
-    return (index%m_map.get()->width);
+    int mapw = m_map.get()->width;
+    return (index%mapw + mapw)%mapw;
 }
 
 int QGraphicsMapScene::_y(int index)
 {
-    return (index/m_map.get()->width);
+    int maph = m_map.get()->height;
+    return (index%maph + maph)%maph;
 }
 
 int QGraphicsMapScene::_index(int x, int y)
@@ -670,10 +680,10 @@ void QGraphicsMapScene::drawRect()
         break;
     }
 
-    int x1 = fst_x > cur_x ? cur_x : fst_x;
-    int x2 = fst_x > cur_x ? fst_x : cur_x;
-    int y1 = fst_y > cur_y ? cur_y : fst_y;
-    int y2 = fst_y > cur_y ? fst_y : cur_y;
+    int x1 = std::min(fst_x,cur_x);
+    int x2 = std::max(fst_x,cur_x);
+    int y1 = std::min(fst_y,cur_y);
+    int y2 = std::max(fst_y,cur_y);
     for (int x = x1; x <= x2; x++)
         for (int y = y1; y <= y2; y++)
         {
@@ -685,11 +695,57 @@ void QGraphicsMapScene::drawRect()
     updateArea(x1-2, y1-2, x2+2, y2+2);
 }
 
+void QGraphicsMapScene::drawCircle()
+{
+    switch (mCore->layer())
+    {
+    case (Core::LOWER):
+        m_lower = m_map.get()->lower_layer;
+        break;
+    case (Core::UPPER):
+        m_upper = m_map.get()->upper_layer;
+        break;
+    default:
+        break;
+    }
+
+    int radius = std::abs(cur_x - fst_x) > std::abs(cur_y - fst_y) ? std::abs(cur_x - fst_x) : std::abs(cur_y - fst_y);
+
+    int x = radius;
+    int y = 0;
+    int radiusError = 1-x;
+    std::vector<short>* layer = (mCore->layer() == Core::LOWER) ? &m_lower : &m_upper;
+#define addtile(xp, yp) layer->at(_index(_x(xp+fst_x),_y(yp+fst_y))) = mCore->selection(x-fst_x,y-fst_y)
+    while (x >= y)
+    {
+        addtile(x,y);
+        addtile(y,x);
+        addtile(-x,y);
+        addtile(-y,x);
+        addtile(-x,-y);
+        addtile(-y,-x);
+        addtile(x,-y);
+        addtile(y,-x);
+        ++y;
+        if (radiusError<0)
+            radiusError += 2*y+1;
+        else {
+            --x;
+            radiusError += 2*(y-x+1);
+        }
+    }
+#undef addtile
+    if (fst_x-radius < 0 || fst_x+radius > m_map.get()->width || fst_y-radius < 0 || fst_y+radius < m_map.get()->height)
+        updateArea(0, 0, m_map.get()->width, m_map.get()->height);
+    else
+        updateArea(fst_x-radius-2, fst_y-radius-2, fst_x+radius+2, fst_y+radius+2);
+}
+
 void QGraphicsMapScene::drawFill(int terrain_id, int x, int y)
 {
     if (x < 0 || x >= m_map.get()->width || y < 0 || y >= m_map.get()->height)
         return;
-    if (terrain_id == mCore->selection(x-fst_x,y-fst_y))
+    if (terrain_id == mCore->translate(mCore->selection(x-fst_x,y-fst_y)))
         return;
     switch (mCore->layer())
     {
